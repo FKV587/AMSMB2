@@ -1189,6 +1189,31 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
             )
         }
     }
+    
+    open func append<S>(
+        stream: S, toPath path: String, offset: Int64, progress: WriteProgressHandler
+    ) async throws where S: AsyncSequence & Sendable, S.Element: DataProtocol {
+        try await withCheckedThrowingContinuation { continuation in
+            append(
+                stream: stream, toPath: path, offset: offset, progress: progress,
+                completionHandler: asyncHandler(continuation)
+            )
+        }
+    }
+    
+    open func append<S>(
+        stream: S, toPath path: String, offset: Int64,
+        chunkSize: Int = 0, progress: WriteProgressHandler,
+        completionHandler: SimpleCompletionHandler
+    ) where S: AsyncSequence & Sendable, S.Element: DataProtocol {
+        with(completionHandler: completionHandler) { client in
+            try self.write(
+                client: client, from: AsyncInputStream(stream: stream), toPath: path, offset: offset, chunkSize: chunkSize,
+                progress: progress
+            )
+        }
+    }
+
 
     /**
      Copy file contents to a new location. With reporting progress on about every 1MiB.
