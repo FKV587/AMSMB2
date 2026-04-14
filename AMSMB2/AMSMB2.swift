@@ -1192,7 +1192,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     
     open func append<S>(
         stream: S, toPath path: String, offset: Int64, progress: WriteProgressHandler
-    ) async throws where S: AsyncSequence & Sendable, S.Element: DataProtocol {
+    ) async throws where S: AsyncSequence & Sendable, S.Element: DataProtocol, S: SendableMetatype, S.Element: SendableMetatype, S.AsyncIterator: SendableMetatype {
         try await withCheckedThrowingContinuation { continuation in
             append(
                 stream: stream, toPath: path, offset: offset, progress: progress,
@@ -1205,7 +1205,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         stream: S, toPath path: String, offset: Int64,
         chunkSize: Int = 0, progress: WriteProgressHandler,
         completionHandler: SimpleCompletionHandler
-    ) where S: AsyncSequence & Sendable, S.Element: DataProtocol {
+    ) where S: AsyncSequence & Sendable, S.Element: DataProtocol, S: SendableMetatype, S.Element: SendableMetatype, S.AsyncIterator: SendableMetatype {
         with(completionHandler: completionHandler) { client in
             try self.write(
                 client: client, from: AsyncInputStream(stream: stream), toPath: path, offset: offset, chunkSize: chunkSize,
