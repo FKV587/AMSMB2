@@ -1145,7 +1145,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      - Parameters:
        - stream: input stream that provides data to be written to file.
        - toPath: path of file to be written.
-       - chunkSize: optimized chunk size to read from stream. Default value is abount 1MB.
+       - chunkSize: optimized chunk size to read from stream. Default value is about 1MB.
        - progress: reports progress of written bytes count so far.
            User must return `true` if they want to continuing or `false` to abort writing.
        - bytes: written bytes count.
@@ -1155,7 +1155,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         stream: S, toPath path: String,
         chunkSize: Int = 0, progress: WriteProgressHandler,
         completionHandler: SimpleCompletionHandler
-    ) where S: AsyncSequence & Sendable, S.Element: DataProtocol {
+    ) where S: AsyncSequence & Sendable, S.Element: DataProtocol, S: SendableMetatype, S.Element: SendableMetatype, S.AsyncIterator: SendableMetatype {
         with(completionHandler: completionHandler) { client in
             try self.write(
                 client: client, from: AsyncInputStream(stream: stream), toPath: path, chunkSize: chunkSize,
@@ -1174,14 +1174,14 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      - Parameters:
        - stream: input stream that provides data to be written to file.
        - toPath: path of file to be written.
-       - chunkSize: optimized chunk size to read from stream. Default value is abount 1MB.
+       - chunkSize: optimized chunk size to read from stream. Default value is about 1MB.
        - progress: reports progress of written bytes count so far.
            User must return `true` if they want to continuing or `false` to abort writing.
        - bytes: written bytes count.
      */
     open func write<S>(
         stream: S, toPath path: String, progress: WriteProgressHandler
-    ) async throws where S: AsyncSequence & Sendable, S.Element: DataProtocol {
+    ) async throws where S: AsyncSequence & Sendable, S.Element: DataProtocol, S: SendableMetatype, S.Element: SendableMetatype, S.AsyncIterator: SendableMetatype {
         try await withCheckedThrowingContinuation { continuation in
             write(
                 stream: stream, toPath: path, progress: progress,
@@ -1381,7 +1381,11 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     ///   - path: Path of file or folder to be monitored for changes.
     ///   - filter: Change types that will be monitored.
     ///   - completionHandler: closure will be run after a change in montored file/folder.
-    func monitorItem(atPath path: String, for filter: SMB2FileChangeType, completionHandler: SimpleCompletionHandler) {
+    func monitorItem(
+        atPath path: String,
+        for filter: SMB2FileChangeType,
+        completionHandler: @Sendable @escaping (_ result: Result<[SMB2FileChangeInfo], any Error>) -> Void
+    ) {
         with(completionHandler: completionHandler) { client in
             var flags = O_RDONLY | O_SYNC
             switch try client.stat(path).resourceType {
@@ -1393,7 +1397,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
                 break
             }
             let file = try SMB2FileHandle(path: path, flags: flags, on: client)
-            try file.changeNotify(for: filter)
+            return try file.changeNotify(for: filter)
         }
     }
     
@@ -1402,7 +1406,8 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     /// - Parameters:
     ///   - path: Path of file or folder to be monitored for changes.
     ///   - filter: Change types that will be monitored.
-    func monitorItem(atPath path: String, for filter: SMB2FileChangeType) async throws {
+    @discardableResult
+    func monitorItem(atPath path: String, for filter: SMB2FileChangeType) async throws -> [SMB2FileChangeInfo] {
         try await withCheckedThrowingContinuation { continuation in
             monitorItem(atPath: path, for: filter, completionHandler: asyncHandler(continuation))
         }
