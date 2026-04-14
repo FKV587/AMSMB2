@@ -642,14 +642,16 @@ class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
                 do {
-                    try await smb.monitorItem(atPath: "\(folderName())", for: .contentModify)
+                    let changes = try await smb.monitorItem(atPath: "\(folderName())", for: [.fileName, .recursive])
+                    XCTAssert(!changes.isEmpty)
+                    print(changes)
                 } catch {
                     print(error)
                     throw error
                 }
             }
-            try await Task.sleep(for: .seconds(1))
             group.addTask {
+                try await Task.sleep(nanoseconds: NSEC_PER_SEC)
                 try await smb.write(data: Data(), toPath: "\(folderName())/file", progress: nil)
             }
             try await group.waitForAll()
