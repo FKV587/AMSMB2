@@ -212,6 +212,7 @@ extension SMB2Client {
     func service(revents: Int32) throws {
         let result = smb2_service(context, revents)
         if result < 0 {
+            let error = error;
             smb2_destroy_context(context)
             context = nil
             try POSIXError.throwIfError(result, description: error)
