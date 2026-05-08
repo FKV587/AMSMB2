@@ -10,6 +10,13 @@
 import Foundation
 import SMB2
 
+@inline(__always)
+private func amsmb2DebugLog(_ message: @autoclosure () -> String) {
+    #if DEBUG
+    print(message())
+    #endif
+}
+
 /// Provides synchronous operation on SMB2
 final class SMB2Client: CustomDebugStringConvertible, CustomReflectable, @unchecked Sendable {
     var context: UnsafeMutablePointer<smb2_context>?
@@ -212,7 +219,10 @@ extension SMB2Client {
     func service(revents: Int32) throws {
         let result = smb2_service(context, revents)
         if result < 0 {
-            let error = error;
+            let error = error
+            let ntError = ntError
+            let fd = context?.pointee.fd ?? -1
+            amsmb2DebugLog("[AMSMB2] smb2_service failed result=\(result) revents=\(revents) fd=\(fd) ntStatus=0x\(String(ntError.rawValue, radix: 16, uppercase: true)) error=\(error ?? "nil")")
             smb2_destroy_context(context)
             context = nil
             try POSIXError.throwIfError(result, description: error)
@@ -387,9 +397,16 @@ extension SMB2Client {
 
     static let generic_handler: smb2_command_cb = { smb2, status, command_data, cbdata in
         do {
-            guard try smb2.unwrap().pointee.fd >= 0 else { return }
+            let smb2 = try smb2.unwrap()
+            let fd = smb2.pointee.fd
+            let ntStatus = NTStatus(rawValue: status)
+            if ntStatus != .success {
+                let message = smb2_get_error(smb2).map(String.init(cString:)) ?? "nil"
+                amsmb2DebugLog("[AMSMB2] callback status=0x\(String(ntStatus.rawValue, radix: 16, uppercase: true)) severity=\(ntStatus.severity) fd=\(fd) error=\(message)")
+            }
+            guard fd >= 0 else { return }
             let cbdata = try cbdata.unwrap().bindMemory(to: CBData.self, capacity: 1).pointee
-            if NTStatus(rawValue: status) != .success {
+            if ntStatus != .success {
                 cbdata.result = status
             }
             cbdata.dataHandler?(command_data)

@@ -13,6 +13,13 @@ import FoundationNetworking
 #endif
 import SMB2
 
+@inline(__always)
+private func amsmb2DebugLog(_ message: @autoclosure () -> String) {
+    #if DEBUG
+    print(message())
+    #endif
+}
+
 /// Implements SMB2 File operations.
 #if canImport(Darwin)
 @objc(AMSMB2Manager)
@@ -1456,6 +1463,8 @@ extension SMB2Manager {
     private func initClient(_ client: SMB2Client, encrypted: Bool) {
         client.securityMode = [.enabled]
         client.authentication = .ntlmSsp
+//        client.securityMode = [.enabled, .required]
+//        client.authentication = .undefined
         client.seal = encrypted
 
         client.domain = _domain
@@ -1463,6 +1472,7 @@ extension SMB2Manager {
         client.user = _user
         client.password = _password
         client.timeout = _timeout
+        amsmb2DebugLog("[AMSMB2] init client auth=\(client.authentication) security=\(client.securityMode) seal=\(client.seal) timeout=\(client.timeout) user=\(client.user) domain=\(client.domain.isEmpty ? "<empty>" : client.domain) workstation=\(client.workstation.isEmpty ? "<empty>" : client.workstation) passwordLength=\(client.password.count)")
     }
 
     private func connect(shareName: String, encrypted: Bool) throws -> SMB2Client {
@@ -1470,8 +1480,15 @@ extension SMB2Manager {
         self.client = client
         initClient(client, encrypted: encrypted)
         let server = url.host! + (url.port.map { ":\($0)" } ?? "")
-        try client.connect(server: server, share: shareName, user: _user)
-        return client
+        amsmb2DebugLog("[AMSMB2] connect start server=\(server) share=\(shareName) user=\(_user) domain=\(_domain.isEmpty ? "<empty>" : _domain) workstation=\(_workstation.isEmpty ? "<empty>" : _workstation) encrypted=\(encrypted)")
+        do {
+            try client.connect(server: server, share: shareName, user: _user)
+            amsmb2DebugLog("[AMSMB2] connect success server=\(server) share=\(shareName) fd=\(client.fileDescriptor)")
+            return client
+        } catch {
+            amsmb2DebugLog("[AMSMB2] connect failed server=\(server) share=\(shareName) fd=\(client.fileDescriptor) ntStatus=0x\(String(client.ntError.rawValue, radix: 16, uppercase: true)) posix=\(client.errno) error=\(client.error ?? error.localizedDescription)")
+            throw error
+        }
     }
 
     private func with(
@@ -1521,11 +1538,15 @@ extension SMB2Manager {
         queue {
             do {
                 let client = try self.connect(shareName: shareName, encrypted: encrypted)
-                defer { try? client.disconnect() }
+                defer {
+                    amsmb2DebugLog("[AMSMB2] disconnect temporary client share=\(shareName) fd=\(client.fileDescriptor)")
+                    try? client.disconnect()
+                }
 
                 let result = try handler(client)
                 completionHandler(.success(result))
             } catch {
+                amsmb2DebugLog("[AMSMB2] with(shareName:) failed share=\(shareName) error=\(error)")
                 completionHandler(.failure(error))
             }
         }
